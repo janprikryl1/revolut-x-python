@@ -46,25 +46,25 @@ When the skill is active, the AI assistant automatically understands:
 
 Agents can install the library into their execution environment using any of the following methods:
 
-### Standard PyPI
+### PyPI (recommended)
 ```bash
 pip install revolut-x-python
 ```
 
-### TestPyPI (Pre-release)
+### TestPyPI (pre-release)
 ```bash
-pip install -i https://test.pypi.org/simple/ revolut-x-python
+pip install --extra-index-url https://test.pypi.org/simple/ revolut-x-python
 ```
 
 ### Direct from GitHub
 ```bash
-pip install "git+https://github.com/janprikryl1/revolut-x-library.git#subdirectory=python"
+pip install "git+https://github.com/janprikryl1/revolut-x-python.git"
 ```
 
 ### From Local Clone / Downloaded ZIP
 ```bash
-git clone https://github.com/janprikryl1/revolut-x-library.git
-cd revolut-x-library/python
+git clone https://github.com/janprikryl1/revolut-x-python.git
+cd revolut-x-python
 pip install -e .
 ```
 

@@ -98,6 +98,77 @@ for c in candles[-5:]:
     print(f"Čas: {c['start']} | Open: {c['open']} | High: {c['high']} | Close: {c['close']}")
 ```
 
+#### Podporované formáty času
+Každá časová hranice — `since` / `until` u svíčkových metod a
+`start_date` / `end_date` u metod pro obchody — přijímá kteroukoli z těchto hodnot:
+
+| Hodnota | Význam |
+| --- | --- |
+| `1700000000000` | Unix timestamp v **milisekundách**, předá se beze změny. |
+| `datetime(2024, 1, 1, tzinfo=timezone.utc)` | Převede se podle vlastního offsetu. |
+| `datetime(2024, 1, 1)` | Naivní hodnota — chápe se jako **UTC**, nikdy jako lokální čas. |
+| `date(2024, 1, 1)` | Midnight UTC daného dne. |
+| `"2024-01-01T00:00:00Z"` | ISO-8601 string (koncové `Z` je v pořádku). |
+| `"1700000000000"` | String z 12+ číslic — milisekundy, pro hodnoty přicházející jako text. |
+
+```python
+from datetime import datetime, timedelta, timezone
+
+candles = client.get_candles(
+    "BTC-EUR",
+    interval=Interval.HOUR_1,
+    since=datetime.now(timezone.utc) - timedelta(hours=500),
+)
+```
+
+!!! warning "Čísla jsou milisekundy, ne sekundy"
+    Čísla se nikdy nepřepočítávají, takže `since=int(time.time())` neskončí
+    chybou — jen dostanete okno začínající v lednu 1970, tedy prázdný nebo
+    nepoužitelný rozsah. Vynásobte tisícem, nebo prostě předejte `datetime` a
+    nechte převod na knihovně. Totéž platí pro odpovědi: `candle["start"]` i
+    `trade["timestamp"]` jsou taky v milisekundách.
+
+    Potřebujete stejný převod i jinde ve svém kódu?
+    `from revolut_x import to_timestamp_ms` ten helper zpřístupňuje.
+
+#### Hodnoty přicházející z requestu
+
+Vstup od uživatele si převeďte sami, místo abyste posílali dál surový string —
+parser v knihovně je pohodlí, ne validační vrstva:
+
+```python
+import re
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+USER_TZ = ZoneInfo("Europe/Prague")
+
+raw = request.args.get("from", "")          # např. '2024-01-01' z <input type="date">
+if raw and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+    abort(400, "from must be YYYY-MM-DD")
+
+# Midnight v zóně *uživatele*, ne v UTC.
+since = datetime.fromisoformat(raw).replace(tzinfo=USER_TZ) if raw else None
+
+candles = client.get_candles("BTC-EUR", Interval.HOUR_1, since=since)
+```
+
+Tři věci, které kousnou, když hodnota přiteče přímo z prohlížeče:
+
+- **String bez offsetu je UTC.** `"2024-01-01"` je UTC midnight, ale uživatel
+  v Praze, který vybral 1. ledna, myslí 31. prosince 23:00 UTC. Hranici proto
+  postavte v jeho zóně a předejte aware `datetime` jako výše. Z JavaScriptu jsou
+  jednoznačné `d.getTime()` (milisekundy) i `d.toISOString()` (nese `Z`);
+  `"2024-01-01T13:30"` z `<input type="datetime-local">` jednoznačné **není** —
+  nemá offset, takže se přečte jako UTC.
+- **Nevyplněné pole je prázdný string, ne chybějící hodnota.** HTML formulář
+  pošle `?from=` i u nedotčeného inputu a `""` vyhodí `ValueError` — proto je
+  v příkladu `if raw`.
+- **Datum bez oddělovačů se odmítne, nehádá se.** `"2024"` a `"20240101"`
+  vyhodí `ValueError` místo toho, aby skončily v roce 1970 nebo se naparsovaly
+  jako datum, protože krátká řada číslic je mezi těmi dvěma významy
+  nerozhodnutelná. Za milisekundy se berou až 12+ číslic.
+
 ### Streamování dlouhých časových oken pomocí `iter_candles()`
 API omezuje jednotlivý požadavek na 1000 svíček. Pro stahování delších kontinuálních období použijte generátor `iter_candles()`, který automaticky dělí časová okna. Rozšiřuje ale jen to, kolik dat můžete *vyžádat* — ne to, jak daleko do minulosti data existují (viz varování o retenci výše):
 
@@ -155,8 +226,8 @@ yesterday = midnight - timedelta(days=1)
 candles = list(client.iter_candles(
     "BTC-EUR",
     Interval.MIN_1,
-    since=int(yesterday.timestamp() * 1000),
-    until=int(midnight.timestamp() * 1000),
+    since=yesterday,
+    until=midnight,
 ))
 print(f"{len(candles)} minutových svíček za {yesterday:%Y-%m-%d}")  # ~1441, 2 požadavky
 ```

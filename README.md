@@ -20,22 +20,32 @@ Python client library for the **Revolut X Crypto Exchange REST API (v1.0)**.
 
 ## Installation
 
-The package is published to **TestPyPI**, so the index has to be given
-explicitly — a plain `pip install revolut-x-python` will not find it:
-
 ```bash
-pip install --extra-index-url https://test.pypi.org/simple/ revolut-x-python
+pip install revolut-x-python
 ```
 
 In a `requirements.txt`:
 
 ```
---extra-index-url https://test.pypi.org/simple/
-revolut-x-python>=0.1.0
+revolut-x-python>=1.0.0
 ```
 
-> `--extra-index-url` (rather than `--index-url`) keeps PyPI available for the
-> `requests` and `cryptography` dependencies, which are not on TestPyPI.
+<details>
+<summary>Pre-release builds (TestPyPI)</summary>
+
+Release candidates go to **TestPyPI** first. Versions `0.0.1` – `0.1.0` were
+published there only; `1.0.0` is the first release on PyPI proper. To install
+a pre-release build:
+
+```bash
+pip install --extra-index-url https://test.pypi.org/simple/ revolut-x-python
+```
+
+Use `--extra-index-url` (rather than `--index-url`) so PyPI stays available
+for the `requests` and `cryptography` dependencies, which are not mirrored on
+TestPyPI.
+
+</details>
 
 ---
 
@@ -88,14 +98,23 @@ pytest tests
 
 ## Academic Reference
 
-Tato knihovna vznikla jako součást **diplomové práce** na **VŠB – Technické univerzitě Ostrava** (Fakulta elektrotechniky a informatiky).
+This library was written as part of a **master's thesis** at **VŠB – Technical
+University of Ostrava**, Faculty of Electrical Engineering and Computer Science.
 
-- **Autor**: Bc. Jan Přikryl
-- **Univerzita**: VŠB – Technická univerzita Ostrava
-- **Fakulta**: Fakulta elektrotechniky a informatiky (FEI)
+- **Author**: Bc. Jan Přikryl
+- **University**: VŠB – Technical University of Ostrava
+- **Faculty**: Faculty of Electrical Engineering and Computer Science (FEI)
+
+---
+
+## Changelog
+
+See [CHANGELOG.md](https://github.com/janprikryl1/revolut-x-python/blob/main/CHANGELOG.md).
 
 ---
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License — see the
+[LICENSE](https://github.com/janprikryl1/revolut-x-python/blob/main/LICENSE)
+file for details.

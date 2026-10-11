@@ -1,2 +1,5 @@
+# Release tooling only. Runtime and dev dependencies live in pyproject.toml
+# (`pip install -e ".[dev]"`).
 build>=1.0.0
-twine>=5.0.0
+# >=6.1 understands Metadata 2.4 (PEP 639 `License-Expression`).
+twine>=6.1.0

@@ -39,6 +39,7 @@ from revolut_x.types import (
     OrderResponse,
     PairConfig,
     Ticker,
+    TimeLike,
     Trade,
 )
 from revolut_x.helpers import (
@@ -51,6 +52,7 @@ from revolut_x.helpers import (
     build_order,
     calculate_maker_price,
     normalize_symbol,
+    to_timestamp_ms,
 )
 from revolut_x.exceptions import (
     ApiError,
@@ -76,6 +78,7 @@ __all__ = [
     "FeeCalculator",
     "FeeEstimate",
     "normalize_symbol",
+    "to_timestamp_ms",
     "calculate_maker_price",
     "build_order",
     "build_market_order",
@@ -92,6 +95,7 @@ __all__ = [
     "OrderResponse",
     "PairConfig",
     "Ticker",
+    "TimeLike",
     "Trade",
     # Exceptions
     "RevolutXError",

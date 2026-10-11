@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- **`datetime` support for time ranges**: `since` / `until` on `get_candles()`
+  and `iter_candles()`, and `start_date` / `end_date` on `get_trades()` and
+  `iter_trades()`, now accept a `datetime`, a `date`, an ISO-8601 string
+  (trailing `Z` included), a digits-only string of 12+ digits (milliseconds, for
+  values arriving from JSON or query parameters) or the millisecond `int` they
+  always took. A shorter run of digits — `'2024'`, `'20240101'` — raises
+  `ValueError` instead of silently resolving to 1970 or to a date, because it is
+  ambiguous between the two; note this also makes `'20240101'` behave the same
+  on every supported interpreter, where `datetime.fromisoformat` accepted it as
+  a basic-format date on 3.11+ but rejected it on 3.10. Naive
+  `datetime`s and strings are interpreted as **UTC** rather than the machine's
+  local timezone, so the same code selects the same window everywhere. Raw
+  numbers are still passed through untouched — seconds are deliberately *not*
+  auto-detected, because inferring the unit from the magnitude would silently
+  change the meaning of the caller's input.
+- **`to_timestamp_ms()`** (exported from `revolut_x`, together with the
+  `TimeLike` type alias) performs that conversion and is reusable in
+  application code.
+
+Existing millisecond integers keep working unchanged.
+
+## [1.0.0] - 2026-10-11
+
+First release published to **PyPI**. Versions `0.0.1` – `0.1.0` were only ever
+uploaded to TestPyPI, so `pip install revolut-x-python` works without an extra
+index from this release onwards. No behavioural changes to the API surface —
+the jump to `1.0.0` marks the public release and the stability promise, and
+everything in `0.1.0` (verified against the live exchange) carries over
+unchanged.
+
+### Added
+- **PyPI metadata**: trove `classifiers` (development status, supported Python
+  3.10 – 3.14, audience, topic, `Typing :: Typed`) plus `Documentation` and
+  `Changelog` entries in `[project.urls]`, so the project page renders the
+  sidebar links and the version/compatibility filters work.
+- **`RELEASING.md`**: the manual release procedure (version bump → build →
+  `twine check` → TestPyPI staging → PyPI upload → tag), including the
+  `rm -rf dist` step that keeps `twine upload dist/*` from re-uploading stale
+  artifacts from an earlier build.
+- **`MANIFEST.in`**: the sdist now ships `CHANGELOG.md`, `requirements.txt`,
+  the `examples/` directory and the AI agent skill (`.agents/`), which is an
+  advertised feature of the package but used to be reachable only by cloning
+  the repository. `docs/`, `site/`, `dist/` and `venv/` are pruned.
+
+### Changed
+- **PEP 639 licensing**: added `license-files = ["LICENSE"]` and raised the
+  build requirement to `setuptools>=77`, which is the first version that
+  understands the `license = "MIT"` SPDX expression already declared here.
+  The dev extra now requires `twine>=6.1` for the same reason — earlier twine
+  rejects Metadata 2.4 artifacts. The `LICENSE` file is included in the wheel
+  instead of being dropped silently.
+- **`[tool.setuptools.packages.find]`**: constrained to `include = ["revolut_x*"]`
+  so nothing else under `src/` can be picked up as a top-level package.
+- **Installation docs rewritten** for the PyPI release (`README.md`,
+  `docs/index.md`, `docs/index.cs.md`, `docs/guide/ai_agents.md`,
+  `docs/guide/ai_agents.cs.md`, agent `SKILL.md`): plain
+  `pip install revolut-x-python` is now the primary path, with TestPyPI kept as
+  a documented pre-release channel. The TestPyPI command was corrected from
+  `-i` to `--extra-index-url` — with `--index-url` the install fails outright,
+  because `requests` and `cryptography` are not mirrored there.
+- **Fixed stale install commands**: the GitHub install line carried a
+  `#subdirectory=python` fragment from the old monorepo layout (the package
+  lives at the repository root), and several commands and links still pointed
+  at the pre-rename `revolut-x-library` repository.
+- **README**: translated the remaining Czech section (`Academic Reference`),
+  since the README is the PyPI project description, and made the `LICENSE` and
+  `CHANGELOG` links absolute so they resolve on the PyPI page.
+
+---
+
 ## [0.1.0] - 2026-10-10
 
 Correctness release. Two public methods were unusable as shipped, and several

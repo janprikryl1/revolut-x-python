@@ -99,6 +99,76 @@ for c in candles[-5:]:
     print(f"Time: {c['start']} | Open: {c['open']} | High: {c['high']} | Close: {c['close']}")
 ```
 
+#### Accepted time formats
+Every time bound — `since` / `until` on the candle methods and
+`start_date` / `end_date` on the trade methods — accepts any of these:
+
+| Value | Meaning |
+| --- | --- |
+| `1700000000000` | Unix timestamp in **milliseconds**, passed through as-is. |
+| `datetime(2024, 1, 1, tzinfo=timezone.utc)` | Converted using its own offset. |
+| `datetime(2024, 1, 1)` | Naive — interpreted as **UTC**, never local time. |
+| `date(2024, 1, 1)` | Midnight UTC on that day. |
+| `"2024-01-01T00:00:00Z"` | ISO-8601 string (a trailing `Z` is fine). |
+| `"1700000000000"` | Digits-only string of 12+ digits — milliseconds, for values arriving as text. |
+
+```python
+from datetime import datetime, timedelta, timezone
+
+candles = client.get_candles(
+    "BTC-EUR",
+    interval=Interval.HOUR_1,
+    since=datetime.now(timezone.utc) - timedelta(hours=500),
+)
+```
+
+!!! warning "Numbers are milliseconds, not seconds"
+    Raw numbers are never rescaled, so `since=int(time.time())` is not an error
+    — it is a window starting in January 1970 and you get back an empty or
+    useless range. Multiply by 1000, or just pass a `datetime` and let the
+    library convert it. The same holds for response fields: `candle["start"]`
+    and `trade["timestamp"]` are milliseconds too.
+
+    Need the conversion elsewhere in your own code?
+    `from revolut_x import to_timestamp_ms` exposes the same helper.
+
+#### Values arriving from a request
+
+Convert user input yourself instead of forwarding the raw string — the parser
+here is a convenience, not an input validation layer:
+
+```python
+import re
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+USER_TZ = ZoneInfo("Europe/Prague")
+
+raw = request.args.get("from", "")          # e.g. '2024-01-01' from <input type="date">
+if raw and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+    abort(400, "from must be YYYY-MM-DD")
+
+# Midnight in the *user's* zone — not UTC midnight.
+since = datetime.fromisoformat(raw).replace(tzinfo=USER_TZ) if raw else None
+
+candles = client.get_candles("BTC-EUR", Interval.HOUR_1, since=since)
+```
+
+Three things that bite when the value comes straight from a browser:
+
+- **A string without an offset is UTC.** `"2024-01-01"` is UTC midnight, but a
+  user in Prague who picked 1 January means 23:00 on 31 December UTC. Build the
+  bound in their timezone and pass the aware `datetime`, as above. From
+  JavaScript, `d.getTime()` (milliseconds) or `d.toISOString()` (carries `Z`)
+  are both unambiguous; `"2024-01-01T13:30"` from `<input type="datetime-local">`
+  is **not** — it has no offset, so it is read as UTC.
+- **An empty field is a string, not a missing one.** HTML forms submit `?from=`
+  for untouched inputs, and `""` raises `ValueError` — hence the `if raw` above.
+- **Separatorless dates are refused, not guessed.** `"2024"` and `"20240101"`
+  raise `ValueError` rather than resolving to 1970 or to a date, because a short
+  run of digits is ambiguous between the two. Only 12+ digits count as
+  milliseconds.
+
 ### Streaming Long Time Ranges with `iter_candles()`
 The API limits single requests to 1000 candles. To download continuous ranges, use the generator `iter_candles()` which automatically handles time window slicing. Note that this widens how much you can *request*, not how far back the data exists — see the retention warning above:
 
@@ -156,8 +226,8 @@ yesterday = midnight - timedelta(days=1)
 candles = list(client.iter_candles(
     "BTC-EUR",
     Interval.MIN_1,
-    since=int(yesterday.timestamp() * 1000),
-    until=int(midnight.timestamp() * 1000),
+    since=yesterday,
+    until=midnight,
 ))
 print(f"{len(candles)} one-minute candles for {yesterday:%Y-%m-%d}")  # ~1441, 2 requests
 ```

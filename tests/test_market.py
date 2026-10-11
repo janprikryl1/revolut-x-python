@@ -1,6 +1,7 @@
 """Unit tests for MarketMixin in revolut_x.market."""
 
 from __future__ import annotations
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -189,3 +190,71 @@ def test_get_ticker_matches_slash_and_dash_symbols() -> None:
     for requested in ("BTC-EUR", "BTC/EUR", "btc-eur"):
         client._http.request.return_value = (200, {"data": [{"symbol": "ETH/EUR"}, btc]})
         assert client.get_ticker(requested) == btc
+
+
+# ---------------------------------------------------------------------------
+# datetime-friendly time ranges
+# ---------------------------------------------------------------------------
+
+def test_get_candles_accepts_datetime_bounds() -> None:
+    """datetime/str bounds must reach the API as millisecond integers."""
+    client = DummyMarketClient()
+    client._http.request.return_value = (200, {"data": []})
+
+    client.get_candles(
+        "BTC-EUR",
+        INTERVAL_MIN,
+        since=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        until="2024-01-02",
+    )
+
+    params = client._http.request.call_args.kwargs["params"]
+    assert params["since"] == 1_704_067_200_000
+    assert params["until"] == 1_704_153_600_000
+    assert all(isinstance(params[k], int) for k in ("since", "until"))
+
+
+def test_get_trades_accepts_datetime_bounds() -> None:
+    client = DummyMarketClient()
+    client._http.request.return_value = (200, {"data": [], "metadata": {}})
+
+    client.get_trades(
+        "BTC-EUR",
+        start_date=date(2024, 1, 1),
+        end_date=datetime(2024, 1, 2, tzinfo=timezone.utc),
+    )
+
+    params = client._http.request.call_args.kwargs["params"]
+    assert params["start_date"] == 1_704_067_200_000
+    assert params["end_date"] == 1_704_153_600_000
+
+
+def test_iter_candles_paginates_from_a_datetime() -> None:
+    """Pagination arithmetic must run on the converted value, not the object."""
+    base = 1_704_067_200_000  # 2024-01-01T00:00:00Z
+    client = FakeCandleClient(base, 3000)
+    since = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    until = since + timedelta(minutes=1500)
+
+    got = _starts(list(client.iter_candles("BTC-EUR", INTERVAL_MIN, since=since, until=until)))
+
+    assert len(got) == 1501
+    assert got[0] == base
+    assert got[-1] == base + 1500 * INTERVAL_MS
+    assert len(client.requests) > 1, "a 1501-candle range must span several pages"
+
+
+def test_iter_trades_converts_bounds_once_for_every_page() -> None:
+    client = DummyMarketClient()
+    pages = [
+        (200, {"data": [{"timestamp": 1}], "metadata": {"next_cursor": "c2"}}),
+        (200, {"data": [{"timestamp": 2}], "metadata": {}}),
+    ]
+    client._http.request.side_effect = pages
+
+    got = list(client.iter_trades("BTC-EUR", start_date="2024-01-01T00:00:00Z"))
+
+    assert len(got) == 2
+    sent = [c.kwargs["params"] for c in client._http.request.call_args_list]
+    assert [p["start_date"] for p in sent] == [1_704_067_200_000] * 2
+    assert sent[1]["cursor"] == "c2"

@@ -19,9 +19,11 @@ from revolut_x.types import (
     OrderBook,
     PairConfig,
     Ticker,
+    TimeLike,
     Trade,
 )
 from revolut_x.helpers import normalize_symbol as _normalize_symbol
+from revolut_x.helpers import to_timestamp_ms as _to_ms
 
 if TYPE_CHECKING:
     from revolut_x._http import HttpClient
@@ -232,8 +234,8 @@ class MarketMixin:
         symbol: str,
         interval: Interval | int = Interval.HOUR_1,
         *,
-        since: int | None = None,
-        until: int | None = None,
+        since: TimeLike | None = None,
+        until: TimeLike | None = None,
     ) -> list[Candle]:
         """Fetch up to 1000 OHLCV candlesticks for a trading pair.
 
@@ -242,8 +244,11 @@ class MarketMixin:
             interval: Candle interval — use the :class:`~revolut_x.types.Interval`
                 enum (e.g. ``Interval.MIN_1``, ``Interval.HOUR_1``) or an integer
                 number of minutes.
-            since: Start time as Unix timestamp in **milliseconds** (inclusive).
-            until: End time as Unix timestamp in **milliseconds** (inclusive).
+            since: Start time, inclusive — a Unix timestamp in
+                **milliseconds**, a :class:`~datetime.datetime` /
+                :class:`~datetime.date`, or an ISO-8601 string (see
+                :func:`~revolut_x.helpers.to_timestamp_ms`).
+            until: End time, inclusive — same accepted formats as ``since``.
 
         Returns:
             A list of :class:`~revolut_x.types.Candle` dictionaries with keys:
@@ -263,20 +268,21 @@ class MarketMixin:
 
         Example::
 
+            >>> from datetime import datetime, timedelta, timezone
             >>> from revolut_x import Interval
             >>> # last 500 hours — comfortably inside the 1000-candle limit
-            >>> now_ms = int(time.time() * 1000)
+            >>> start = datetime.now(timezone.utc) - timedelta(hours=500)
             >>> candles = client.get_candles("BTC-EUR", Interval.HOUR_1,
-            ...                              since=now_ms - 500 * 3_600_000)
+            ...                              since=start)
             >>> for c in candles[:3]:
             ...     print(f"{c['start']}: O={c['open']} H={c['high']}")
         """
         api_symbol = _normalize_symbol(symbol)
         params: dict[str, Any] = {"interval": int(interval)}
         if since is not None:
-            params["since"] = int(since)
+            params["since"] = _to_ms(since)
         if until is not None:
-            params["until"] = int(until)
+            params["until"] = _to_ms(until)
 
         _status, data = self._http.request(
             "GET",
@@ -293,8 +299,8 @@ class MarketMixin:
         symbol: str,
         interval: Interval | int = Interval.HOUR_1,
         *,
-        since: int | None = None,
-        until: int | None = None,
+        since: TimeLike | None = None,
+        until: TimeLike | None = None,
     ) -> Iterator[Candle]:
         """Iterate over all candles in a time range, automatically paginating.
 
@@ -305,8 +311,10 @@ class MarketMixin:
         Args:
             symbol: Trading pair (e.g. ``'BTC-EUR'``).
             interval: Candle interval (see :meth:`get_candles`).
-            since: Start time as Unix timestamp in **milliseconds**.
-            until: End time as Unix timestamp in **milliseconds**.
+            since: Start time — Unix timestamp in **milliseconds**,
+                :class:`~datetime.datetime` / :class:`~datetime.date`, or an
+                ISO-8601 string.
+            until: End time — same accepted formats as ``since``.
 
         Yields:
             :class:`~revolut_x.types.Candle` dictionaries in chronological
@@ -316,7 +324,7 @@ class MarketMixin:
         Example::
 
             >>> for candle in client.iter_candles("BTC-EUR", Interval.MIN_1,
-            ...                                   since=1700000000000):
+            ...                                   since="2024-01-01"):
             ...     process(candle)  # each candle is a dict
         """
         interval_ms = int(interval) * 60 * 1000  # interval in milliseconds
@@ -324,19 +332,22 @@ class MarketMixin:
         # window is inclusive on both ends — so 999 intervals == 1000 candles.
         max_batch_ms = 999 * interval_ms
 
-        if since is None:
+        since_ms = _to_ms(since) if since is not None else None
+        until_ms = _to_ms(until) if until is not None else None
+
+        if since_ms is None:
             # Without a start there is nothing to paginate: a single request
             # already returns the most recent batch.
-            yield from self.get_candles(symbol, interval, until=until)
+            yield from self.get_candles(symbol, interval, until=until_ms)
             return
 
-        current_since = since
+        current_since = since_ms
 
         while True:
             # Walk fixed-size windows forward rather than chaining off the last
             # returned candle, so that gaps in the series (illiquid pairs with
             # no trades in an interval) cannot cut the iteration short.
-            hard_end = until if until is not None else int(time.time() * 1000)
+            hard_end = until_ms if until_ms is not None else int(time.time() * 1000)
             batch_until = min(current_since + max_batch_ms, hard_end)
             # The API rejects a window where 'until' equals 'since', which is
             # what a final single-candle window would produce. Always ask for
@@ -346,8 +357,8 @@ class MarketMixin:
             batch = self.get_candles(
                 symbol, interval, since=current_since, until=batch_until
             )
-            if until is not None:
-                batch = [c for c in batch if int(c.get("start", 0)) <= until]
+            if until_ms is not None:
+                batch = [c for c in batch if int(c.get("start", 0)) <= until_ms]
 
             yield from batch
 
@@ -364,8 +375,8 @@ class MarketMixin:
         self,
         symbol: str,
         *,
-        start_date: int | None = None,
-        end_date: int | None = None,
+        start_date: TimeLike | None = None,
+        end_date: TimeLike | None = None,
         cursor: str | None = None,
         limit: int = MAX_TRADES_PER_PAGE,
     ) -> tuple[list[Trade], str | None]:
@@ -373,8 +384,11 @@ class MarketMixin:
 
         Args:
             symbol: Trading pair (e.g. ``'BTC-EUR'``).
-            start_date: Start time as Unix timestamp in **milliseconds**.
-            end_date: End time as Unix timestamp in **milliseconds**.
+            start_date: Start time — Unix timestamp in **milliseconds**,
+                :class:`~datetime.datetime` / :class:`~datetime.date`, or an
+                ISO-8601 string (see
+                :func:`~revolut_x.helpers.to_timestamp_ms`).
+            end_date: End time — same accepted formats as ``start_date``.
             cursor: Pagination cursor from a previous response's
                 ``metadata.next_cursor`` field.
             limit: Maximum number of trades to return.  The exchange accepts
@@ -401,9 +415,9 @@ class MarketMixin:
             "limit": max(1, min(limit, MAX_TRADES_PER_PAGE)),
         }
         if start_date is not None:
-            params["start_date"] = int(start_date)
+            params["start_date"] = _to_ms(start_date)
         if end_date is not None:
-            params["end_date"] = int(end_date)
+            params["end_date"] = _to_ms(end_date)
         if cursor:
             params["cursor"] = cursor
 
@@ -424,8 +438,8 @@ class MarketMixin:
         self,
         symbol: str,
         *,
-        start_date: int | None = None,
-        end_date: int | None = None,
+        start_date: TimeLike | None = None,
+        end_date: TimeLike | None = None,
         limit: int = MAX_TRADES_PER_PAGE,
     ) -> Iterator[Trade]:
         """Iterate over all public trades in a time range, automatically paginating.
@@ -435,8 +449,10 @@ class MarketMixin:
 
         Args:
             symbol: Trading pair (e.g. ``'BTC-EUR'``).
-            start_date: Start time as Unix timestamp in **milliseconds**.
-            end_date: End time as Unix timestamp in **milliseconds**.
+            start_date: Start time — Unix timestamp in **milliseconds**,
+                :class:`~datetime.datetime` / :class:`~datetime.date`, or an
+                ISO-8601 string.
+            end_date: End time — same accepted formats as ``start_date``.
             limit: Page size per request (1–100, clamped into that range).
 
         Yields:
@@ -444,17 +460,23 @@ class MarketMixin:
 
         Example::
 
-            >>> for trade in client.iter_trades("BTC-EUR",
-            ...                                 start_date=1700000000000):
+            >>> from datetime import datetime, timezone
+            >>> start = datetime(2024, 1, 1, tzinfo=timezone.utc)
+            >>> for trade in client.iter_trades("BTC-EUR", start_date=start):
             ...     print(f"{trade['price']} EUR x {trade['quantity']} BTC")
         """
+        # Convert once so every page sends the same window and a bad value
+        # fails on the first iteration rather than halfway through.
+        start_ms = _to_ms(start_date) if start_date is not None else None
+        end_ms = _to_ms(end_date) if end_date is not None else None
+
         cursor: str | None = None
 
         while True:
             trades, next_cursor = self.get_trades(
                 symbol,
-                start_date=start_date,
-                end_date=end_date,
+                start_date=start_ms,
+                end_date=end_ms,
                 cursor=cursor,
                 limit=limit,
             )

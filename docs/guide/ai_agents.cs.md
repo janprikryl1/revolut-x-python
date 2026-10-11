@@ -46,19 +46,26 @@ Když je skill aktivní, AI asistent automaticky rozumí:
 
 Agenti mohou knihovnu nainstalovat do svého prostředí následujícími způsoby:
 
-### Standardní PyPI
+### PyPI (doporučeno)
 ```bash
 pip install revolut-x-python
 ```
 
-### TestPyPI (Pre-release)
+### TestPyPI (předběžná vydání)
 ```bash
-pip install -i https://test.pypi.org/simple/ revolut-x-python
+pip install --extra-index-url https://test.pypi.org/simple/ revolut-x-python
 ```
 
 ### Přímo z GitHubu
 ```bash
-pip install "git+https://github.com/janprikryl1/revolut-x-python.git#subdirectory=python"
+pip install "git+https://github.com/janprikryl1/revolut-x-python.git"
+```
+
+### Z lokálního klonu / stáhnutého ZIPu
+```bash
+git clone https://github.com/janprikryl1/revolut-x-python.git
+cd revolut-x-python
+pip install -e .
 ```
 
 ---

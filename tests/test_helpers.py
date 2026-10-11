@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict
 
@@ -16,6 +17,7 @@ from revolut_x.helpers import (
     build_market_order,
     build_order,
     normalize_symbol,
+    to_timestamp_ms,
     validate_against_pair_rules,
 )
 from revolut_x.types import OrderSide, OrderType, TimeInForce
@@ -297,3 +299,73 @@ def test_fee_calculator_taker() -> None:
     # Trade value 1000.00 * 0.0009 = 0.9000 EUR
     assert estimate.fee_amount == Decimal("0.9000")
     assert estimate.fee_currency == "EUR"
+
+
+# ---------------------------------------------------------------------------
+# to_timestamp_ms
+# ---------------------------------------------------------------------------
+
+#: 2024-01-01T00:00:00Z
+EPOCH_2024_MS = 1_704_067_200_000
+
+
+def test_to_timestamp_ms_passes_numbers_through() -> None:
+    """Integers are already milliseconds — seconds must not be auto-detected."""
+    assert to_timestamp_ms(EPOCH_2024_MS) == EPOCH_2024_MS
+    assert to_timestamp_ms(EPOCH_2024_MS / 1000) == EPOCH_2024_MS // 1000
+    assert to_timestamp_ms(1_704_067_200_123.9) == 1_704_067_200_123
+
+
+def test_to_timestamp_ms_converts_aware_datetime() -> None:
+    assert to_timestamp_ms(datetime(2024, 1, 1, tzinfo=timezone.utc)) == EPOCH_2024_MS
+    # A +02:00 wall clock of 02:00 is the same instant as 00:00 UTC.
+    offset = timezone(timedelta(hours=2))
+    assert to_timestamp_ms(datetime(2024, 1, 1, 2, tzinfo=offset)) == EPOCH_2024_MS
+
+
+def test_to_timestamp_ms_treats_naive_datetime_as_utc() -> None:
+    """Naive values must not depend on the machine's local timezone."""
+    assert to_timestamp_ms(datetime(2024, 1, 1)) == EPOCH_2024_MS
+
+
+def test_to_timestamp_ms_converts_date_to_midnight_utc() -> None:
+    assert to_timestamp_ms(date(2024, 1, 1)) == EPOCH_2024_MS
+
+
+def test_to_timestamp_ms_parses_iso_strings() -> None:
+    assert to_timestamp_ms("2024-01-01") == EPOCH_2024_MS
+    assert to_timestamp_ms("2024-01-01T00:00:00") == EPOCH_2024_MS
+    assert to_timestamp_ms("2024-01-01T00:00:00+00:00") == EPOCH_2024_MS
+    # A trailing 'Z' is not accepted by fromisoformat before Python 3.11.
+    assert to_timestamp_ms("2024-01-01T00:00:00Z") == EPOCH_2024_MS
+    assert to_timestamp_ms("  2024-01-01T00:00:00Z  ") == EPOCH_2024_MS
+    assert to_timestamp_ms("2024-01-01T00:00:00.500Z") == EPOCH_2024_MS + 500
+
+
+def test_to_timestamp_ms_rejects_bad_input() -> None:
+    with pytest.raises(ValueError):
+        to_timestamp_ms("last tuesday")
+    with pytest.raises(TypeError):
+        to_timestamp_ms(None)  # type: ignore[arg-type]
+    with pytest.raises(TypeError):
+        to_timestamp_ms(True)  # type: ignore[arg-type]
+
+
+def test_to_timestamp_ms_accepts_long_digit_strings_as_milliseconds() -> None:
+    """Values arriving from JSON or query parameters are strings."""
+    assert to_timestamp_ms("1704067200000") == EPOCH_2024_MS
+    assert to_timestamp_ms("-1704067200000") == -EPOCH_2024_MS
+    # Exactly at the threshold: 1973-03-03, the oldest value still read as ms.
+    assert to_timestamp_ms("100000000000") == 100_000_000_000
+
+
+@pytest.mark.parametrize("value", ["2024", "20240101", "0", "1704067200", "-500"])
+def test_to_timestamp_ms_rejects_short_digit_strings(value: str) -> None:
+    """A separatorless date must not be read as an instant in 1970.
+
+    ``'20240101'`` is valid ISO-8601 basic format, so on Python 3.11+ it used to
+    parse as 2024-01-01 here while the PHP SDK read it as 20240101 ms — a silent
+    cross-SDK discrepancy, and on Python 3.10 it raised. Both SDKs now refuse it.
+    """
+    with pytest.raises(ValueError, match="Ambiguous numeric timestamp string"):
+        to_timestamp_ms(value)

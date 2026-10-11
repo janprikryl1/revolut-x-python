@@ -1,5 +1,6 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+# >=77 is required for the PEP 639 `license`/`license-files` fields below.
+requires = ["setuptools>=77.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,6 +9,7 @@ dynamic = ["version"]
 description = "Python SDK for the Revolut X Crypto Exchange REST API (v1.0)"
 readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 authors = [
     { name = "Jan Přikryl" },
@@ -23,7 +25,9 @@ dev = [
     "pytest>=7.0",
     "pytest-mock>=3.10",
     "build>=1.0",
-    "twine>=5.0",
+    # >=6.1 understands Metadata 2.4 (the PEP 639 `License-Expression` field),
+    # older twine rejects the built artifacts with "unknown metadata version".
+    "twine>=6.1",
 ]
 docs = [
     "mkdocs>=1.5.0",
@@ -35,7 +39,9 @@ docs = [
 
 [project.urls]
 Homepage = "https://janprikryl1.github.io/revolut-x-python/"
+Documentation = "https://janprikryl1.github.io/revolut-x-python/"
 Repository = "https://github.com/janprikryl1/revolut-x-python"
+Changelog = "https://github.com/janprikryl1/revolut-x-python/blob/main/CHANGELOG.md"
 Issues = "https://github.com/janprikryl1/revolut-x-python/issues"
 
 [tool.setuptools.dynamic]
@@ -44,6 +50,7 @@ version = { attr = "revolut_x._version.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["revolut_x*"]
 
 [tool.setuptools.package-data]
 revolut_x = ["py.typed"]

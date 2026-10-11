@@ -24,19 +24,28 @@
 
 ### Package Installation
 ```bash
-# Standard PyPI release:
+# Release from PyPI:
 pip install revolut-x-python
 
-# Or from TestPyPI:
-pip install -i https://test.pypi.org/simple/ revolut-x-python
-
-# Direct install from GitHub:
-pip install "git+https://github.com/janprikryl1/revolut-x-python.git#subdirectory=python"
+# Direct install from GitHub (latest main):
+pip install "git+https://github.com/janprikryl1/revolut-x-python.git"
 ```
 
+!!! info "Pre-release builds"
+    Release candidates land on **TestPyPI** before PyPI. Versions `0.0.1` – `0.1.0`
+    exist on TestPyPI only; `1.0.0` is the first release on PyPI proper.
+
+    ```bash
+    pip install --extra-index-url https://test.pypi.org/simple/ revolut-x-python
+    ```
+
+    Use `--extra-index-url`, not `--index-url`: the `requests` and `cryptography`
+    dependencies are not mirrored on TestPyPI and still have to come from PyPI.
+
 ### Source Code & Downloads
+- **PyPI Package**: [pypi.org/project/revolut-x-python](https://pypi.org/project/revolut-x-python/)
 - **GitHub Repository**: [github.com/janprikryl1/revolut-x-python](https://github.com/janprikryl1/revolut-x-python)
-- **PHP SDK**: Samostatná knihovna pro PHP je k dispozici na [github.com/janprikryl1/revolut-x-php](https://github.com/janprikryl1/revolut-x-php).
+- **PHP SDK**: A standalone PHP library is available at [github.com/janprikryl1/revolut-x-php](https://github.com/janprikryl1/revolut-x-php).
 
 ---
 

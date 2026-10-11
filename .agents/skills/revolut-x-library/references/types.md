@@ -2,7 +2,7 @@
 
 Complete type definitions for the revolut-x-python SDK. All types are defined in
 [`types.py`](./../../../src/revolut_x/types.py).
-Online interactive documentation: [https://janprikryl1.github.io/revolut-x-library/api/types/](https://janprikryl1.github.io/revolut-x-library/api/types/)
+Online interactive documentation: [https://janprikryl1.github.io/revolut-x-python/api/types/](https://janprikryl1.github.io/revolut-x-python/api/types/)
 
 ## Enums
 
@@ -39,7 +39,9 @@ class Interval(int, Enum):
 ## TypedDicts (API Responses)
 
 > All numeric values are **strings** (not floats) to preserve decimal precision.
-> Timestamps are `int` (Unix milliseconds).
+> Timestamps in responses are `int` (Unix milliseconds). On the way *in*, time
+> range arguments are typed `TimeLike` — a `datetime`, a `date`, an ISO-8601
+> string, or an `int` of milliseconds.
 
 ### Candle
 

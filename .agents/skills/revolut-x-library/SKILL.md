@@ -22,13 +22,13 @@ Python SDK for the **Revolut X Crypto Exchange** REST API (v1.0).
 
 ## Installation & Download
 
-### 1. From PyPI / TestPyPI
+### 1. From PyPI
 ```bash
-# Standard PyPI release:
 pip install revolut-x-python
 
-# Or from TestPyPI:
-pip install -i https://test.pypi.org/simple/ revolut-x-python
+# Pre-release builds are staged on TestPyPI first. `--extra-index-url` (not
+# `--index-url`) keeps requests/cryptography resolvable from PyPI:
+pip install --extra-index-url https://test.pypi.org/simple/ revolut-x-python
 ```
 
 ### 2. Direct Install from GitHub
@@ -136,10 +136,11 @@ book = client.get_order_book("BTC-EUR")            # → OrderBook
 candles = client.get_candles("BTC-EUR", Interval.HOUR_1)
 
 # Public trades — single page + cursor.
-# start_date / end_date are Unix MILLISECONDS (int), never date strings —
-# a string like "2024-01-01" raises ValueError.
-import time
-day_ago = int(time.time() * 1000) - 86_400_000
+# start_date / end_date accept a datetime, a date, an ISO-8601 string, or a Unix
+# timestamp in MILLISECONDS. Numbers are never rescaled, so a seconds timestamp
+# silently means 1970 — prefer a datetime when you are not sure.
+from datetime import datetime, timedelta, timezone
+day_ago = datetime.now(timezone.utc) - timedelta(days=1)
 trades, next_cursor = client.get_trades("BTC-EUR", start_date=day_ago, limit=100)
 
 # Auto-paginating trade iterator
@@ -170,7 +171,10 @@ Each candle is a dict — **not** a list or tuple:
 - `start` — candle **open** time, `int` Unix **milliseconds**, always **UTC**
 - `open` / `high` / `low` / `close` / `volume` — **strings**; `volume` is in the
   base currency. Wrap in `Decimal`, never `float`.
-- `since` / `until` are also Unix **milliseconds** (`int`), inclusive on both ends.
+- `since` / `until` are inclusive on both ends and accept a `datetime`, a `date`,
+  an ISO-8601 string, or an `int` of Unix **milliseconds**. Naive `datetime`s and
+  strings are read as **UTC**; raw numbers are taken as milliseconds as-is
+  (`revolut_x.to_timestamp_ms` does the conversion if you need it yourself).
 
 Three things that make naive candle code wrong:
 
@@ -194,7 +198,7 @@ regardless of who runs it.
 
 ```python
 import time
-from datetime import datetime, timezone, time as dtime
+from datetime import datetime, timedelta, timezone, time as dtime
 from decimal import Decimal
 from revolut_x import RevolutXClient, Interval
 
@@ -205,10 +209,10 @@ interval = Interval.HOUR_1
 # otherwise the row set shifts with the machine's local timezone.
 day = datetime.now(timezone.utc).date()                      # or date(2026, 10, 10)
 midnight = datetime.combine(day, dtime.min, tzinfo=timezone.utc)
-since = int(midnight.timestamp() * 1000)
-until = min(since + 86_400_000 - 1, int(time.time() * 1000))
+until = min(midnight + timedelta(days=1) - timedelta(milliseconds=1),
+            datetime.now(timezone.utc))
 
-candles = client.get_candles("BTC-EUR", interval, since=since, until=until)
+candles = client.get_candles("BTC-EUR", interval, since=midnight, until=until)
 
 interval_ms = int(interval) * 60_000
 now_ms = int(time.time() * 1000)

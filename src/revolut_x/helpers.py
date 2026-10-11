@@ -1,10 +1,11 @@
 from __future__ import annotations
 import uuid
 from dataclasses import dataclass
+from datetime import date, datetime, time, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 
-from revolut_x.types import OrderSide, OrderType, TimeInForce
+from revolut_x.types import OrderSide, OrderType, TimeInForce, TimeLike
 from revolut_x.exceptions import OrderValidationError
 
 
@@ -33,6 +34,96 @@ def normalize_symbol(symbol: str) -> str:
             if base:
                 return f"{base}-{quote}"
     return symbol.replace("/", "-").upper()
+
+
+#: Minimum number of digits a digits-only string needs before it is read as a
+#: millisecond timestamp.  12 digits reach back to 1973 and real timestamps have
+#: had 13 since 2001, so anything shorter is almost certainly a date that lost
+#: its separators (``'2024'``, ``'20240101'``) rather than an instant in 1970.
+MIN_MS_DIGITS = 12
+
+
+def to_timestamp_ms(value: TimeLike) -> int:
+    """Converts a point in time to a Unix timestamp in milliseconds.
+
+    Used by the market data methods so that time ranges can be expressed with
+    ``datetime`` objects instead of raw millisecond integers.
+
+    Args:
+        value: One of
+
+            * ``int`` / ``float`` — already a Unix timestamp in
+              **milliseconds**; returned as an int (floats are truncated).
+              Seconds are *not* auto-detected — multiply by 1000 yourself.
+            * :class:`~datetime.datetime` — timezone-aware values use their own
+              offset, naive values are interpreted as **UTC**.
+            * :class:`~datetime.date` — midnight UTC on that day.
+            * ``str`` — an ISO-8601 timestamp (a trailing ``'Z'`` is accepted);
+              naive strings are again interpreted as UTC.  A digits-only string
+              of at least :data:`MIN_MS_DIGITS` digits is read as milliseconds
+              instead, for values arriving from JSON or query parameters.
+
+    Returns:
+        int: The Unix timestamp in milliseconds.
+
+    Raises:
+        TypeError: If the value is not one of the supported types.
+        ValueError: If a string is neither a valid ISO-8601 timestamp nor a
+            long enough run of digits.
+
+    Example:
+        >>> from datetime import datetime, timezone
+        >>> to_timestamp_ms(datetime(2024, 1, 1, tzinfo=timezone.utc))
+        1704067200000
+        >>> to_timestamp_ms("2024-01-01")
+        1704067200000
+        >>> to_timestamp_ms(1704067200000)
+        1704067200000
+        >>> to_timestamp_ms("1704067200000")
+        1704067200000
+    """
+    if isinstance(value, bool):
+        raise TypeError("Timestamp must be a number, datetime, date, or ISO-8601 string")
+
+    if isinstance(value, (int, float)):
+        return int(value)
+
+    if isinstance(value, str):
+        text = value.strip()
+
+        digits = text[1:] if text[:1] in "+-" else text
+        # str.isdigit() also accepts non-ASCII digits that int() cannot parse.
+        if digits.isascii() and digits.isdigit():
+            if len(digits) >= MIN_MS_DIGITS:
+                return int(text)
+            raise ValueError(
+                f"Ambiguous numeric timestamp string: {value!r}. A digits-only string is "
+                f"read as Unix milliseconds and needs at least {MIN_MS_DIGITS} digits — "
+                f"anything shorter lands in 1970 and is far more likely a date that lost "
+                f"its separators. Pass an int for milliseconds, or a date like "
+                f"'2024-01-01'."
+            )
+
+        if text.endswith(("Z", "z")):
+            text = f"{text[:-1]}+00:00"
+        try:
+            value = datetime.fromisoformat(text)
+        except ValueError as exc:
+            raise ValueError(f"Invalid ISO-8601 timestamp: {value!r}") from exc
+
+    # datetime is a subclass of date, so it has to be checked first.
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return int(value.timestamp() * 1000)
+
+    if isinstance(value, date):
+        return int(datetime.combine(value, time.min, tzinfo=timezone.utc).timestamp() * 1000)
+
+    raise TypeError(
+        f"Timestamp must be a number, datetime, date, or ISO-8601 string, "
+        f"got {type(value).__name__}"
+    )
 
 
 class OrderPayloadBuilder:

@@ -7,11 +7,26 @@ This module provides:
 * **TypedDicts** — :class:`Candle`, :class:`Trade`, :class:`Ticker`,
   :class:`Balance`, :class:`PairConfig`, etc. for IDE autocompletion
   on API response data.
+* **Type aliases** — :data:`TimeLike` for time range parameters.
 """
 
 from __future__ import annotations
+from datetime import date, datetime
 from enum import Enum
-from typing import TypedDict
+from typing import TypedDict, Union
+
+
+# ---------------------------------------------------------------------------
+# Type aliases
+# ---------------------------------------------------------------------------
+
+TimeLike = Union[int, float, datetime, date, str]
+"""Anything accepted where the API expects a Unix timestamp in milliseconds.
+
+Numbers are taken as milliseconds as-is; :class:`~datetime.datetime` and
+:class:`~datetime.date` objects and ISO-8601 strings are converted by
+:func:`~revolut_x.helpers.to_timestamp_ms`.
+"""
 
 
 # ---------------------------------------------------------------------------
