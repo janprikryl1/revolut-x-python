@@ -26,6 +26,22 @@ for t in all_tickers[:3]:
     print(f"{t['symbol']}: {t.get('last_price')}")
 ```
 
+!!! note "Jeden ticker na pár *a region*"
+    `get_tickers()` vrací řádek pro každou kombinaci páru a regionu, nikoli
+    jeden na pár — většina symbolů je kotována v `EEA` i `UK` za odlišné ceny
+    a objemy, takže se v seznamu objeví dvakrát. Region poznáte z
+    `t['region']` a nespoléhejte se na pořadí seznamu: burza ho mezi
+    jednotlivými voláními přehazuje.
+
+    `get_ticker()` tuto nejednoznačnost řeší tím, že vrátí **nejlikvidnější**
+    kotaci daného symbolu (nejvyšší `volume_24h`). Pokud potřebujete
+    konkrétní region, vyfiltrujte si ho z `get_tickers()` sami:
+
+    ```python
+    uk = [t for t in client.get_tickers()
+          if t["symbol"] == "RAD/USD" and t["region"] == "UK"][0]
+    ```
+
 ### Získání knihy objednávek (Order Book)
 Načte aktuální cenové hladiny nákupních (bids) a prodejních (asks) příkazů.
 Každá hladina je **slovník** — cena je pod klíčem `p`, množství pod `q`:

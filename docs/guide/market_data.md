@@ -26,6 +26,22 @@ for t in all_tickers[:3]:
     print(f"{t['symbol']}: {t.get('last_price')}")
 ```
 
+!!! note "One ticker per pair *and* region"
+    `get_tickers()` returns a row for every pair/region combination, not one
+    per pair — most symbols are quoted in both `EEA` and `UK` at different
+    prices and volumes, so they appear twice. Read `t['region']` to tell them
+    apart, and do not rely on the order of the list: the exchange reshuffles
+    it between calls.
+
+    `get_ticker()` resolves that ambiguity by returning the **most liquid**
+    quote for the symbol (highest `volume_24h`). If you need a specific
+    region, filter `get_tickers()` yourself:
+
+    ```python
+    uk = [t for t in client.get_tickers()
+          if t["symbol"] == "RAD/USD" and t["region"] == "UK"][0]
+    ```
+
 ### Getting Order Books
 Fetch the current bid and ask price levels. Each level is a **dictionary** —
 the price lives under `p` and the quantity under `q`:

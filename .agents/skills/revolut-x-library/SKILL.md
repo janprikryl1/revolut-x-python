@@ -189,6 +189,35 @@ Three things that make naive candle code wrong:
    rejected with HTTP 400 (`Lookup window interval exceeds the limit of 1000
    candles`) — it is *not* silently truncated. Use `iter_candles` instead.
 
+### `until` semantics — two traps
+
+`until` is not just a filter; for the **forming** candle it also decides how much
+of it is aggregated. Closed candles are unaffected (they are served complete
+regardless of `until`), so `iter_candles` is safe for historical ranges.
+
+```python
+# same forming candle (12:00 UTC), fetched at 12:40 UTC with different `until`:
+# until=12:00  ->  high 74200.00  volume 0.00287357   (clipped to the first ms)
+# until=12:10  ->  high 74212.00  volume 0.59329312
+# until=12:30  ->  high 74249.75  volume 0.83764088
+# until=now    ->  high 74249.75  volume 0.93167676   (everything so far)
+```
+
+1. **Never pass `until` equal to a candle's own `start`** — you get that candle
+   aggregated over ~zero time (volume near 0, `high`/`low`/`close` all ≈ `open`).
+   Two runs that differ only in `until` then look like contradictory data.
+2. **A future `until` silently drops the forming candle.** Asking for the end of
+   today (`midnight + 24h`) returns only the closed candles — the current hour
+   disappears without any error:
+
+```python
+# at 12:42 UTC, forming candle = 12:00
+client.get_candles(sym, Interval.HOUR_1, since=s, until=now)          # -> 12:00 present
+client.get_candles(sym, Interval.HOUR_1, since=s, until=now + 1800000)  # -> 12:00 MISSING
+```
+
+So always clamp: `until = min(window_end, int(time.time() * 1000))`.
+
 ### Reproducible recipe: candles for a calendar day
 
 Use this shape whenever the user asks for "today" / "yesterday" / a given date.
@@ -482,7 +511,7 @@ For full type definitions, see [references/types.md](./references/types.md).
 ```bash
 # Development install (tests + dev tools)
 pip install -e ".[dev]"
-pytest                      # run test suite (43 tests)
+pytest                      # run test suite (59 tests)
 
 # Documentation install & commands
 pip install -e ".[docs]"

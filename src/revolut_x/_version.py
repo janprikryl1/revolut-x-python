@@ -7,4 +7,4 @@ three used to be maintained by hand and had drifted apart (0.0.6 / 0.0.8 /
 0.1.0 simultaneously).
 """
 
-__version__ = "1.0.1"
+__version__ = "1.1.0"

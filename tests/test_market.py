@@ -192,6 +192,46 @@ def test_get_ticker_matches_slash_and_dash_symbols() -> None:
         assert client.get_ticker(requested) == btc
 
 
+def test_get_ticker_is_independent_of_response_order() -> None:
+    """A symbol quoted in two regions must not resolve by list position.
+
+    Regression test: ``/public/tickers`` returns one row per pair *and* region
+    and reorders them between calls, so returning the first match handed back
+    a different region — and a different price — on each call.  The liquid
+    venue must win from either position.
+    """
+    client = DummyMarketClient()
+    eea = {"symbol": "RAD/USD", "region": "EEA",
+           "last_price": "0.3166", "volume_24h": "63402.95"}
+    uk = {"symbol": "RAD/USD", "region": "UK",
+          "last_price": "0.3193", "volume_24h": "1014.82"}
+
+    for rows in ([eea, uk], [uk, eea]):
+        client._http.request.return_value = (200, {"data": list(rows)})
+        assert client.get_ticker("RAD-USD") == eea
+
+
+def test_get_ticker_prefers_a_quote_with_a_usable_volume() -> None:
+    """A missing or malformed volume must not beat a real one, and ties are
+    broken deterministically rather than by position."""
+    client = DummyMarketClient()
+    traded = {"symbol": "X/USD", "region": "UK", "volume_24h": "0"}
+    no_volume = {"symbol": "X/USD", "region": "EEA"}
+
+    for rows in ([traded, no_volume], [no_volume, traded]):
+        client._http.request.return_value = (200, {"data": list(rows)})
+        assert client.get_ticker("X-USD") == traded
+
+    # Equal volumes: whichever order they arrive in, the same one comes back.
+    a = {"symbol": "Y/USD", "region": "EEA", "volume_24h": "5"}
+    b = {"symbol": "Y/USD", "region": "UK", "volume_24h": "5"}
+    picks = []
+    for rows in ([a, b], [b, a]):
+        client._http.request.return_value = (200, {"data": list(rows)})
+        picks.append(client.get_ticker("Y-USD"))
+    assert picks[0] == picks[1]
+
+
 # ---------------------------------------------------------------------------
 # datetime-friendly time ranges
 # ---------------------------------------------------------------------------

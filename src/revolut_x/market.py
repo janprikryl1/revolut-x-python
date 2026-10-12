@@ -35,6 +35,21 @@ logger = logging.getLogger(__name__)
 MAX_TRADES_PER_PAGE = 100
 
 
+def _liquidity_rank(ticker: Ticker) -> tuple[float, str]:
+    """Sort key picking the most liquid of several quotes for one symbol.
+
+    Returns 24-hour base volume, falling back to ``-1`` when the field is
+    absent or not a number so that a quote with a usable volume always wins.
+    ``region`` breaks a tie, keeping the choice deterministic even when two
+    venues report the exact same volume (notably ``0`` on an untraded pair).
+    """
+    try:
+        volume = float(ticker.get("volume_24h"))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        volume = -1.0
+    return volume, ticker.get("region", "")
+
+
 class MarketMixin:
     """Public market data endpoints — no authentication required.
 
@@ -140,7 +155,11 @@ class MarketMixin:
         """Retrieve current tickers (best bid, best ask, last price) for all pairs.
 
         Returns:
-            A list of :class:`~revolut_x.types.Ticker` dictionaries.
+            A list of :class:`~revolut_x.types.Ticker` dictionaries — **one per
+            pair *and* region**, not one per pair.  Most symbols trade in both
+            ``'EEA'`` and ``'UK'`` and therefore appear twice, with different
+            prices and volumes in each; read ``['region']`` to tell them apart.
+            The order of the list is not stable between calls.
 
         Raises:
             ApiError: If the API returns a non-2xx response.
@@ -160,6 +179,17 @@ class MarketMixin:
             A :class:`~revolut_x.types.Ticker` with best bid, best ask,
             and last traded price.
 
+        Note:
+            Most symbols are quoted in more than one region (``'EEA'`` and
+            ``'UK'``) at different prices and volumes.  Because
+            ``/public/tickers`` returns them in an order that changes between
+            calls, picking the first match would hand back a different region —
+            and so a different price — on each call.  This method therefore
+            returns the **most liquid** quote: the match with the highest
+            ``volume_24h``, with the region name breaking an exact tie.  To
+            work with a specific region, filter :meth:`get_tickers` on
+            ``['region']`` yourself.
+
         Raises:
             ValueError: If ticker data is not available for the given symbol.
             ApiError: If the API returns a non-2xx response.
@@ -175,10 +205,12 @@ class MarketMixin:
         target_dash = symbol.replace("/", "-").upper()
 
         if isinstance(tickers, list):
-            for t in tickers:
-                sym = t.get("symbol", "").upper()
-                if sym in (target_slash, target_dash):
-                    return t
+            matches = [
+                t for t in tickers
+                if t.get("symbol", "").upper() in (target_slash, target_dash)
+            ]
+            if matches:
+                return max(matches, key=_liquidity_rank)
         elif isinstance(tickers, dict):
             result = tickers.get(target_slash) or tickers.get(target_dash)
             if result is not None:

@@ -31,6 +31,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Existing millisecond integers keep working unchanged.
 
+## [1.1.0] - 2026-10-12
+### Fixed
+- **`get_ticker()` returned a random region's price.** `/public/tickers` serves
+  one row per pair *and* region — 777 rows for 455 pairs, because 322 symbols
+  are quoted in both `EEA` and `UK`, in every case at a different price and
+  volume. `get_ticker()` returned the first match, and the exchange reorders
+  the list between calls: across three consecutive requests the leading region
+  flipped for 251 of those 322 symbols. Callers therefore saw prices jump
+  (`RAD/USD` alternating between `0.3166` at volume 63 403 and `0.3193` at
+  volume 1 015) with nothing having happened on the market, which is enough to
+  trip any logic that compares quotes over time. It now returns the most liquid
+  quote — highest `volume_24h`, region name breaking an exact tie — so repeated
+  calls agree. Single-region pairs, including the documented `BTC/EUR`, are
+  unaffected. To target one region, filter `get_tickers()` on `['region']`.
+
+### Documentation
+- **`get_tickers()`** no longer describes itself as returning tickers "for all
+  pairs", which implied one row per pair; it documents the per-region
+  duplication, the unstable ordering, and the `region` field.
+
 ## [1.0.0] - 2026-10-11
 
 First release published to **PyPI**. Versions `0.0.1` – `0.1.0` were only ever
