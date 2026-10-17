@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1rc1] - 2026-10-17
+
 ### Added
 - **`datetime` support for time ranges**: `since` / `until` on `get_candles()`
   and `iter_candles()`, and `start_date` / `end_date` on `get_trades()` and
