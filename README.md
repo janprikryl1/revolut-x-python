@@ -96,6 +96,45 @@ pytest tests
 
 ---
 
+## Releasing & Publishing
+
+Publishing to **PyPI** and **TestPyPI** is fully automated via GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
+
+Whenever commits are pushed to `main`, the workflow runs the test suite and checks [`src/revolut_x/_version.py`](src/revolut_x/_version.py). If a new version is detected (no matching Git tag exists yet), it automatically builds the package, creates a Git tag and GitHub Release, and publishes to the corresponding registry.
+
+### 1. Stable Release (PyPI)
+
+To publish a standard production release to [PyPI](https://pypi.org/project/revolut-x-python/):
+
+1. Bump `__version__` in `src/revolut_x/_version.py` (e.g. `__version__ = "1.2.0"`).
+2. Document changes under a matching `## [1.2.0]` header in `CHANGELOG.md`.
+3. Commit and push to `main`:
+   ```bash
+   git commit -am "chore: release 1.2.0"
+   git push origin main
+   ```
+4. The workflow will:
+   - Run the test suite (`pytest`).
+   - Create and push tag `v1.2.0`.
+   - Create a GitHub Release with notes extracted from `CHANGELOG.md`.
+   - Publish the package to **production PyPI**.
+
+### 2. Experimental / Pre-release (TestPyPI)
+
+To publish an experimental or pre-release build to [TestPyPI](https://test.pypi.org/project/revolut-x-python/):
+
+1. Set a pre-release version in `src/revolut_x/_version.py` (e.g. `"1.2.0rc1"`, `"1.2.0a1"`, `"1.2.0b1"`, `"1.2.0.dev1"`, or `"1.2.0-exp1"`).
+2. Commit and push to `main`:
+   ```bash
+   git commit -am "chore: pre-release 1.2.0rc1"
+   git push origin main
+   ```
+3. The workflow automatically recognizes the pre-release suffix and routes the upload to **TestPyPI** (and marks the GitHub Release as *Pre-release*).
+
+> **Manual Dispatch**: You can also trigger a release or test run manually anytime from the GitHub web UI via **Actions → Release & Publish → Run workflow**, where you can optionally override the deployment target (`auto`, `testpypi`, or `pypi`).
+
+---
+
 ## Academic Reference
 
 This library was written as part of a **master's thesis** at **VŠB – Technical

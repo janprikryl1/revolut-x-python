@@ -1,0 +1,288 @@
+name: Release & Publish
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Target repository override ('auto', 'pypi', 'testpypi')"
+        required: true
+        type: choice
+        default: "auto"
+        options:
+          - auto
+          - testpypi
+          - pypi
+      force_publish:
+        description: "Force publish even if version already exists on registry"
+        required: false
+        type: boolean
+        default: false
+      skip_tests:
+        description: "Skip running pytest"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  test:
+    name: Run test suite
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.skip_tests }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run pytest
+        run: |
+          pytest
+
+  check-version:
+    name: Check version bump & target
+    needs: [test]
+    if: always() && (needs.test.result == 'success' || needs.test.result == 'skipped')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      tag_name: ${{ steps.check.outputs.tag_name }}
+      target: ${{ steps.check.outputs.target }}
+      is_prerelease: ${{ steps.check.outputs.is_prerelease }}
+      should_tag: ${{ steps.check.outputs.should_tag }}
+      should_publish: ${{ steps.check.outputs.should_publish }}
+    steps:
+      - name: Checkout repository with full history & tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check version, git tags, and registry status
+        id: check
+        shell: python
+        env:
+          INPUT_TARGET: ${{ inputs.target }}
+          INPUT_FORCE_PUBLISH: ${{ inputs.force_publish }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          import re, os, subprocess, urllib.request, urllib.error
+
+          # 1. Read version from src/revolut_x/_version.py
+          version_file = "src/revolut_x/_version.py"
+          with open(version_file, "r", encoding="utf-8") as f:
+              content = f.read()
+          match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', content)
+          if not match:
+              raise SystemExit("Error: Could not find __version__ in " + version_file)
+          version = match.group(1).strip()
+          tag = f"v{version}"
+          print(f"Extracted version: {version} -> tag: {tag}")
+
+          # 2. Check if git tag exists
+          tag_exists = False
+          try:
+              res = subprocess.run(["git", "tag", "-l", tag], capture_output=True, text=True, check=True)
+              tag_exists = bool(res.stdout.strip())
+          except Exception as e:
+              print(f"Git tag check warning: {e}")
+          print(f"Tag {tag} exists in git: {tag_exists}")
+
+          # 3. Determine if experimental / pre-release
+          # Pattern matches PEP 440 pre-releases (a, b, rc, dev) or words exp, experimental
+          prerelease_match = re.search(r'(rc|alpha|beta|dev|exp|experimental|[ab]\d+)', version, re.IGNORECASE)
+          is_prerelease = bool(prerelease_match)
+          print(f"Is pre-release / experimental: {is_prerelease}")
+
+          # Target override from workflow_dispatch input, if any
+          manual_target = os.environ.get("INPUT_TARGET", "auto")
+          if manual_target in ("pypi", "testpypi"):
+              target = manual_target
+          elif is_prerelease:
+              target = "testpypi"
+          else:
+              target = "pypi"
+          print(f"Deployment target: {target}")
+
+          # 4. Check if already published on registry
+          def is_published(pkg, ver, is_test):
+              base = "https://test.pypi.org" if is_test else "https://pypi.org"
+              url = f"{base}/pypi/{pkg}/{ver}/json"
+              try:
+                  req = urllib.request.Request(url, headers={"User-Agent": "revolut-x-checker"})
+                  with urllib.request.urlopen(req) as resp:
+                      return resp.status == 200
+              except urllib.error.HTTPError as err:
+                  if err.code == 404:
+                      return False
+                  print(f"Warning: registry returned HTTP {err.code}")
+                  return False
+              except Exception as err:
+                  print(f"Warning: registry check failed: {err}")
+                  return False
+
+          already_published = is_published("revolut-x-python", version, target == "testpypi")
+          print(f"Already published on {target}: {already_published}")
+
+          force_publish = os.environ.get("INPUT_FORCE_PUBLISH", "false").lower() == "true"
+          is_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+
+          # 5. Decide actions
+          # We tag if tag does not exist yet (or if forced)
+          should_tag = (not tag_exists) or force_publish
+          # We publish if it's not published yet (or forced), and only if either it's a new tag or manual run
+          should_publish = (not already_published or force_publish) and (should_tag or is_manual)
+
+          print("--- Decision ---")
+          print(f"should_tag: {should_tag}")
+          print(f"should_publish: {should_publish}")
+
+          # Set GitHub Actions outputs
+          github_output = os.environ.get("GITHUB_OUTPUT")
+          if github_output:
+              with open(github_output, "a", encoding="utf-8") as out:
+                  out.write(f"version={version}\n")
+                  out.write(f"tag_name={tag}\n")
+                  out.write(f"target={target}\n")
+                  out.write(f"is_prerelease={'true' if is_prerelease else 'false'}\n")
+                  out.write(f"should_tag={'true' if should_tag else 'false'}\n")
+                  out.write(f"should_publish={'true' if should_publish else 'false'}\n")
+
+  build-and-tag:
+    name: Build, Tag & Release
+    needs: [check-version]
+    if: needs.check-version.outputs.should_tag == 'true' || needs.check-version.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+          python -m build
+          twine check dist/*
+
+      - name: Extract changelog section
+        id: changelog
+        shell: python
+        env:
+          VERSION: ${{ needs.check-version.outputs.version }}
+        run: |
+          import re, os
+          version = os.environ["VERSION"]
+          notes = f"Release v{version}"
+          try:
+              if os.path.exists("CHANGELOG.md"):
+                  content = open("CHANGELOG.md", encoding="utf-8").read()
+                  pattern = rf'## \[{re.escape(version)}\][^\n]*\n(.*?)(?=\n## \[|\Z)'
+                  match = re.search(pattern, content, re.DOTALL)
+                  if match and match.group(1).strip():
+                      notes = match.group(1).strip()
+          except Exception as e:
+              print(f"Changelog extraction warning: {e}")
+          with open("RELEASE_NOTES.md", "w", encoding="utf-8") as f:
+              f.write(notes)
+
+      - name: Create Git Tag and Push
+        if: needs.check-version.outputs.should_tag == 'true'
+        shell: bash
+        env:
+          TAG: ${{ needs.check-version.outputs.tag_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub Release
+        if: needs.check-version.outputs.should_tag == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.check-version.outputs.tag_name }}
+          IS_PRERELEASE: ${{ needs.check-version.outputs.is_prerelease }}
+        shell: bash
+        run: |
+          PRERELEASE_FLAG=""
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+          gh release create "$TAG" dist/* \
+            --title "$TAG" \
+            --notes-file RELEASE_NOTES.md \
+            $PRERELEASE_FLAG
+
+      - name: Upload distribution artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+  publish-testpypi:
+    name: Publish to TestPyPI
+    needs: [check-version, build-and-tag]
+    if: needs.check-version.outputs.should_publish == 'true' && needs.check-version.outputs.target == 'testpypi'
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/revolut-x-python
+    permissions:
+      id-token: write
+    steps:
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish package to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [check-version, build-and-tag]
+    if: needs.check-version.outputs.should_publish == 'true' && needs.check-version.outputs.target == 'pypi'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/revolut-x-python
+    permissions:
+      id-token: write
+    steps:
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
