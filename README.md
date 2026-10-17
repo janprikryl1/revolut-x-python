@@ -98,9 +98,11 @@ pytest tests
 
 ## Releasing & Publishing
 
-Publishing to **PyPI** and **TestPyPI** is fully automated via GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
+All Pull Requests automatically run the test suite across Python 3.10, 3.11, 3.12, and 3.13 ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) as a required merge check.
 
-Whenever commits are pushed to `main`, the workflow runs the test suite and checks [`src/revolut_x/_version.py`](src/revolut_x/_version.py). If a new version is detected (no matching Git tag exists yet), it automatically builds the package, creates a Git tag and GitHub Release, and publishes to the corresponding registry.
+Publishing to **PyPI** and **TestPyPI** is automated upon merging to `main` via GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
+
+Whenever commits are merged into `main`, the workflow checks [`src/revolut_x/_version.py`](src/revolut_x/_version.py). If a new version is detected (no matching Git tag exists yet), it builds the package, creates a Git tag and GitHub Release, and publishes to the corresponding registry.
 
 ### 1. Stable Release (PyPI)
 
@@ -108,13 +110,8 @@ To publish a standard production release to [PyPI](https://pypi.org/project/revo
 
 1. Bump `__version__` in `src/revolut_x/_version.py` (e.g. `__version__ = "1.2.0"`).
 2. Document changes under a matching `## [1.2.0]` header in `CHANGELOG.md`.
-3. Commit and push to `main`:
-   ```bash
-   git commit -am "chore: release 1.2.0"
-   git push origin main
-   ```
-4. The workflow will:
-   - Run the test suite (`pytest`).
+3. Open a Pull Request into `main`. The CI workflow will verify all tests pass across Python 3.10–3.13.
+4. Merge the Pull Request. The release workflow will:
    - Create and push tag `v1.2.0`.
    - Create a GitHub Release with notes extracted from `CHANGELOG.md`.
    - Publish the package to **production PyPI**.
